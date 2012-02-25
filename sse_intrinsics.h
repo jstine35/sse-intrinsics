@@ -1,4 +1,5 @@
-/*  Copyright (C) 2011 Nicholas Cardell, Jake Stine
+
+/*  Copyright (C) 2011, 2012 Nicholas Cardell, Jake Stine
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -24,11 +25,18 @@
 #include <xmmintrin.h>
 #include <emmintrin.h>
 
+#if (_MSC_VER >= 1600)
+#	include <immintrin.h>	// VS2010 supports AVX
+#endif	// _MSC_VER >= 1600
+
 #if defined(__GNUC__)
-#	include <pmmintrin.h>
-#	include <smmintrin.h>
-#	include <tmmintrin.h>
-#	if defined(__PCLMUL__)
+
+	// gcc provides a single header that includes all intrinsics based on the compiler's
+	// target machine configuration.  If you want AVX support then you need to tell GCC to
+	// use i7-avx as its target.
+
+#	include <x86intrin.h>
+#	if defined(__PCLMUL__)	// only include wmmintrin if pclmul support is enabled by compiler.
 #		include <wmmintrin.h>
 #	endif
 #endif
@@ -36,22 +44,31 @@
 #include <stdint.h>
 
 #if defined(__GNUC__)
-#	define INLINE		__attribute__((always_inline, unused))
-#else
-#	define INLINE		__forceinline
-#endif
-
-#if !defined( STATIC_INLINE )
-
-#	if defined(_MSC_VER)
-#		define STATIC_INLINE	static __forceinline
-#	elif defined(__GNUC__)
-#		define STATIC_INLINE	static __attribute__((always_inline, unused))
+#	if !defined(__ssi_always_inline__)
+#		define __ssi_always_inline__			__attribute__((always_inline, unused))
 #	endif
-
+#	if !defined( __ssi_static_inline__ )
+#		define __ssi_static_inline__			static __attribute__((always_inline, unused))
+#	endif
+#elif defined(_MSC_VER)
+#	if !defined( __ssi_always_inline__ )
+#		define __ssi_always_inline__			__forceinline
+#	endif
+#	if !defined( __ssi_static_inline__ )
+#		define __ssi_static_inline__			static __forceinline
+#	endif
+#else
+#	if !defined( __ssi_always_inline__ )
+#		define __ssi_always_inline__			inline
+#	endif
+#	if !defined( __ssi_static_inline__ )
+#		define __ssi_static_inline__			static inline
+#	endif
 #endif
 
-#if !defined(_M_AMD64)
+
+// _M_AMD64 for msvc, __x86_64__ for gcc.
+#if !defined(_M_AMD64) && !defined(__x86_64__)
 
 #	include <assert.h>
 #	define _mm_cvtsi64_ss(a, b) (assert(0), a) // only available in x64
@@ -66,8 +83,8 @@
 #define ItoF(x) _mm_castsi128_ps(x)
 #define FtoF(x) x
 
-#define StInl	STATIC_INLINE
-#define tmplInl	INLINE
+#define StInl	__ssi_static_inline__
+#define tmplInl	__ssi_always_inline__
 
 // ADD / SUB
 StInl void i_addps		(__m128& dest, __m128 a, __m128 b)	{ dest = FtoF(_mm_add_ps(FtoF(a), FtoF(b))); }
@@ -403,7 +420,7 @@ StInl void i_packuswb	(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_packu
 StInl void i_packusdw	(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_packus_epi32(FtoI(a), FtoI(b))); }
 
 // PALIGNR
-template<int imm8> tmplInl __m128 i_alignr_(__m128& dest, __m128 a, __m128 b) { return ItoF(_mm_alignr_epi8(FtoI(a), FtoI(b), imm8)); }
+template<int imm8> tmplInl void i_alignr_(__m128& dest, __m128 a, __m128 b) { dest = ItoF(_mm_alignr_epi8(FtoI(a), FtoI(b), imm8)); }
 #define i_align(dest, a, b, imm8) i_alignr_<imm8>(dest, a, b) // imm8 needs to be a constant expression / integer literal
 
 // PAVG
@@ -411,58 +428,58 @@ StInl void i_pavgb		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_avg_epu
 StInl void i_pavgw		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_avg_epu16(FtoI(a), FtoI(b))); }
 
 // PBLENDVB
-StInl __m128 i_pblendvb	(__m128& dest, __m128 a, __m128 b, __m128 mask)			{ return ItoF(_mm_blendv_epi8(FtoI(a), FtoI(b), FtoI(mask))); }
+StInl void i_pblendvb	(__m128& dest, __m128 a, __m128 b, __m128 mask)			{ dest = ItoF(_mm_blendv_epi8(FtoI(a), FtoI(b), FtoI(mask))); }
 
 // PBLENDW	
-template<int mask> tmplInl __m128 i_pblendw_(__m128& dest, __m128 a, __m128 b)	{ return ItoF(_mm_blend_epi16(FtoI(a), FtoI(b), mask)); }
+template<int mask> tmplInl void i_pblendw_(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_blend_epi16(FtoI(a), FtoI(b), mask)); }
 #define i_pblendw(dest, a, b, mask) i_pblendw_<mask>(dest, a, b)  // mask needs to be a constant expression / integer literal
 
 #if defined(__PCLMUL__)
 // PCLMULQDQ
-template<int imm8> tmplInl __m128 i_pclmuldq_(__m128& dest, __m128 a, __m128 b)	{ return ItoF(_mm_clmulepi64_si128(FtoI(a), FtoI(b), imm8)); }
+template<int imm8> tmplInl void i_pclmuldq_(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_clmulepi64_si128(FtoI(a), FtoI(b), imm8)); }
 #define i_pclmuldq(dest, a, b, imm8) i_pclmuldq_<imm8>(dest, a, b)  // imm8 needs to be a constant expression / integer literal
 #endif
 
 // PCMPEQ / PCMPGT
-StInl __m128 i_pcmpeqb(__m128& dest, __m128 a, __m128 b) { return ItoF(_mm_cmpeq_epi8 (FtoI(a), FtoI(b))); }
-StInl __m128 i_pcmpeqw(__m128& dest, __m128 a, __m128 b) { return ItoF(_mm_cmpeq_epi16(FtoI(a), FtoI(b))); }
-StInl __m128 i_pcmpeqd(__m128& dest, __m128 a, __m128 b) { return ItoF(_mm_cmpeq_epi32(FtoI(a), FtoI(b))); }
-StInl __m128 i_pcmpeqq(__m128& dest, __m128 a, __m128 b) { return ItoF(_mm_cmpeq_epi64(FtoI(a), FtoI(b))); }
-StInl __m128 i_pcmpgtb(__m128& dest, __m128 a, __m128 b) { return ItoF(_mm_cmpgt_epi8 (FtoI(a), FtoI(b))); }
-StInl __m128 i_pcmpgtw(__m128& dest, __m128 a, __m128 b) { return ItoF(_mm_cmpgt_epi16(FtoI(a), FtoI(b))); }
-StInl __m128 i_pcmpgtd(__m128& dest, __m128 a, __m128 b) { return ItoF(_mm_cmpgt_epi32(FtoI(a), FtoI(b))); }
-StInl __m128 i_pcmpgtq(__m128& dest, __m128 a, __m128 b) { return ItoF(_mm_cmpgt_epi64(FtoI(a), FtoI(b))); }
+StInl void i_pcmpeqb(__m128& dest, __m128 a, __m128 b) { dest = ItoF(_mm_cmpeq_epi8 (FtoI(a), FtoI(b))); }
+StInl void i_pcmpeqw(__m128& dest, __m128 a, __m128 b) { dest = ItoF(_mm_cmpeq_epi16(FtoI(a), FtoI(b))); }
+StInl void i_pcmpeqd(__m128& dest, __m128 a, __m128 b) { dest = ItoF(_mm_cmpeq_epi32(FtoI(a), FtoI(b))); }
+StInl void i_pcmpeqq(__m128& dest, __m128 a, __m128 b) { dest = ItoF(_mm_cmpeq_epi64(FtoI(a), FtoI(b))); }
+StInl void i_pcmpgtb(__m128& dest, __m128 a, __m128 b) { dest = ItoF(_mm_cmpgt_epi8 (FtoI(a), FtoI(b))); }
+StInl void i_pcmpgtw(__m128& dest, __m128 a, __m128 b) { dest = ItoF(_mm_cmpgt_epi16(FtoI(a), FtoI(b))); }
+StInl void i_pcmpgtd(__m128& dest, __m128 a, __m128 b) { dest = ItoF(_mm_cmpgt_epi32(FtoI(a), FtoI(b))); }
+StInl void i_pcmpgtq(__m128& dest, __m128 a, __m128 b) { dest = ItoF(_mm_cmpgt_epi64(FtoI(a), FtoI(b))); }
 
 // PCMPESTRI / PCMPESTRM
-template<int mode> tmplInl __m128 i_pcmpestrm_(__m128& dest, __m128 a, int la, __m128 b, int lb) { return ItoF(_mm_cmpestrm(FtoI(a), la, FtoI(b), lb, mode)); }
-template<int mode> tmplInl int    i_pcmpestri_(__m128& dest, __m128 a, int la, __m128 b, int lb) { return     (_mm_cmpestri(FtoI(a), la, FtoI(b), lb, mode)); }
-template<int mode> tmplInl int    i_pcmpestra_(__m128& dest, __m128 a, int la, __m128 b, int lb) { return     (_mm_cmpestra(FtoI(a), la, FtoI(b), lb, mode)); }
-template<int mode> tmplInl int    i_pcmpestrc_(__m128& dest, __m128 a, int la, __m128 b, int lb) { return     (_mm_cmpestrc(FtoI(a), la, FtoI(b), lb, mode)); }
-template<int mode> tmplInl int    i_pcmpestro_(__m128& dest, __m128 a, int la, __m128 b, int lb) { return     (_mm_cmpestro(FtoI(a), la, FtoI(b), lb, mode)); }
-template<int mode> tmplInl int    i_pcmpestrs_(__m128& dest, __m128 a, int la, __m128 b, int lb) { return     (_mm_cmpestrs(FtoI(a), la, FtoI(b), lb, mode)); }
-template<int mode> tmplInl int    i_pcmpestrz_(__m128& dest, __m128 a, int la, __m128 b, int lb) { return     (_mm_cmpestrz(FtoI(a), la, FtoI(b), lb, mode)); }
-#define i_pcmpestrm(dest, a, la, b, lb, mode) i_pcmpestrm_<mode>(dest, a, la, b, lb) // mode needs to be a constant expression / integer literal
-#define i_pcmpestri(dest, a, la, b, lb, mode) i_pcmpestri_<mode>(dest, a, la, b, lb) // mode needs to be a constant expression / integer literal
-#define i_pcmpestrc(dest, a, la, b, lb, mode) i_pcmpestra_<mode>(dest, a, la, b, lb) // mode needs to be a constant expression / integer literal
-#define i_pcmpestro(dest, a, la, b, lb, mode) i_pcmpestrc_<mode>(dest, a, la, b, lb) // mode needs to be a constant expression / integer literal
-#define i_pcmpestrs(dest, a, la, b, lb, mode) i_pcmpestrs_<mode>(dest, a, la, b, lb) // mode needs to be a constant expression / integer literal
-#define i_pcmpestrz(dest, a, la, b, lb, mode) i_pcmpestrz_<mode>(dest, a, la, b, lb) // mode needs to be a constant expression / integer literal
+template<int mode> tmplInl void	  i_pcmpestrm_(__m128& dest, __m128 a, int la, __m128 b, int lb) { dest = ItoF(_mm_cmpestrm(FtoI(a), la, FtoI(b), lb, mode)); }
+template<int mode> tmplInl int    i_pcmpestri_(				 __m128 a, int la, __m128 b, int lb) { return     (_mm_cmpestri(FtoI(a), la, FtoI(b), lb, mode)); }
+template<int mode> tmplInl int    i_pcmpestra_(				 __m128 a, int la, __m128 b, int lb) { return     (_mm_cmpestra(FtoI(a), la, FtoI(b), lb, mode)); }
+template<int mode> tmplInl int    i_pcmpestrc_(				 __m128 a, int la, __m128 b, int lb) { return     (_mm_cmpestrc(FtoI(a), la, FtoI(b), lb, mode)); }
+template<int mode> tmplInl int    i_pcmpestro_(				 __m128 a, int la, __m128 b, int lb) { return     (_mm_cmpestro(FtoI(a), la, FtoI(b), lb, mode)); }
+template<int mode> tmplInl int    i_pcmpestrs_(				 __m128 a, int la, __m128 b, int lb) { return     (_mm_cmpestrs(FtoI(a), la, FtoI(b), lb, mode)); }
+template<int mode> tmplInl int    i_pcmpestrz_(				 __m128 a, int la, __m128 b, int lb) { return     (_mm_cmpestrz(FtoI(a), la, FtoI(b), lb, mode)); }
+#define i_pcmpestrm(dest,	a, la, b, lb, mode)	i_pcmpestrm_<mode>(dest, a, la, b, lb) // mode needs to be a constant expression / integer literal
+#define i_pcmpestri(		a, la, b, lb, mode)	i_pcmpestri_<mode>(		 a, la, b, lb) // mode needs to be a constant expression / integer literal
+#define i_pcmpestrc(		a, la, b, lb, mode)	i_pcmpestra_<mode>(		 a, la, b, lb) // mode needs to be a constant expression / integer literal
+#define i_pcmpestro(		a, la, b, lb, mode)	i_pcmpestrc_<mode>(		 a, la, b, lb) // mode needs to be a constant expression / integer literal
+#define i_pcmpestrs(		a, la, b, lb, mode)	i_pcmpestrs_<mode>(		 a, la, b, lb) // mode needs to be a constant expression / integer literal
+#define i_pcmpestrz(		a, la, b, lb, mode)	i_pcmpestrz_<mode>(		 a, la, b, lb) // mode needs to be a constant expression / integer literal
 
 // PCMPISTRI / PCMPISTRM
-template<int mode> tmplInl __m128 i_pcmpistrm_(__m128& dest, __m128 a, __m128 b) { return ItoF(_mm_cmpistrm(FtoI(a), FtoI(b), mode)); }
-template<int mode> tmplInl int    i_pcmpistri_(__m128& dest, __m128 a, __m128 b) { return     (_mm_cmpistri(FtoI(a), FtoI(b), mode)); }
-template<int mode> tmplInl int    i_pcmpistra_(__m128& dest, __m128 a, __m128 b) { return     (_mm_cmpistra(FtoI(a), FtoI(b), mode)); }
-template<int mode> tmplInl int    i_pcmpistrc_(__m128& dest, __m128 a, __m128 b) { return     (_mm_cmpistrc(FtoI(a), FtoI(b), mode)); }
-template<int mode> tmplInl int    i_pcmpistro_(__m128& dest, __m128 a, __m128 b) { return     (_mm_cmpistro(FtoI(a), FtoI(b), mode)); }
-template<int mode> tmplInl int    i_pcmpistrs_(__m128& dest, __m128 a, __m128 b) { return     (_mm_cmpistrs(FtoI(a), FtoI(b), mode)); }
-template<int mode> tmplInl int    i_pcmpistrz_(__m128& dest, __m128 a, __m128 b) { return     (_mm_cmpistrz(FtoI(a), FtoI(b), mode)); }
-#define i_pcmpistrm(dest, a, b, mode) i_pcmpistrm_<mode>(dest, a, b) // mode needs to be a constant expression / integer literal
-#define i_pcmpistri(dest, a, b, mode) i_pcmpistri_<mode>(dest, a, b) // mode needs to be a constant expression / integer literal
-#define i_pcmpistra(dest, a, b, mode) i_pcmpistra_<mode>(dest, a, b) // mode needs to be a constant expression / integer literal
-#define i_pcmpistrc(dest, a, b, mode) i_pcmpistrc_<mode>(dest, a, b) // mode needs to be a constant expression / integer literal
-#define i_pcmpistro(dest, a, b, mode) i_pcmpistro_<mode>(dest, a, b) // mode needs to be a constant expression / integer literal
-#define i_pcmpistrs(dest, a, b, mode) i_pcmpistrs_<mode>(dest, a, b) // mode needs to be a constant expression / integer literal
-#define i_pcmpistrz(dest, a, b, mode) i_pcmpistrz_<mode>(dest, a, b) // mode needs to be a constant expression / integer literal
+template<int mode> tmplInl void   i_pcmpistrm_(__m128& dest, __m128 a, __m128 b) { dest = ItoF(_mm_cmpistrm(FtoI(a), FtoI(b), mode)); }
+template<int mode> tmplInl int    i_pcmpistri_(				 __m128 a, __m128 b) { return     (_mm_cmpistri(FtoI(a), FtoI(b), mode)); }
+template<int mode> tmplInl int    i_pcmpistra_(				 __m128 a, __m128 b) { return     (_mm_cmpistra(FtoI(a), FtoI(b), mode)); }
+template<int mode> tmplInl int    i_pcmpistrc_(				 __m128 a, __m128 b) { return     (_mm_cmpistrc(FtoI(a), FtoI(b), mode)); }
+template<int mode> tmplInl int    i_pcmpistro_(				 __m128 a, __m128 b) { return     (_mm_cmpistro(FtoI(a), FtoI(b), mode)); }
+template<int mode> tmplInl int    i_pcmpistrs_(				 __m128 a, __m128 b) { return     (_mm_cmpistrs(FtoI(a), FtoI(b), mode)); }
+template<int mode> tmplInl int    i_pcmpistrz_(				 __m128 a, __m128 b) { return     (_mm_cmpistrz(FtoI(a), FtoI(b), mode)); }
+#define i_pcmpistrm(dest,	a, b, mode) i_pcmpistrm_<mode>(dest, a, b) // mode needs to be a constant expression / integer literal
+#define i_pcmpistri(		a, b, mode) i_pcmpistri_<mode>(		 a, b) // mode needs to be a constant expression / integer literal
+#define i_pcmpistra(		a, b, mode) i_pcmpistra_<mode>(		 a, b) // mode needs to be a constant expression / integer literal
+#define i_pcmpistrc(		a, b, mode) i_pcmpistrc_<mode>(		 a, b) // mode needs to be a constant expression / integer literal
+#define i_pcmpistro(		a, b, mode) i_pcmpistro_<mode>(		 a, b) // mode needs to be a constant expression / integer literal
+#define i_pcmpistrs(		a, b, mode) i_pcmpistrs_<mode>(		 a, b) // mode needs to be a constant expression / integer literal
+#define i_pcmpistrz(		a, b, mode) i_pcmpistrz_<mode>(		 a, b) // mode needs to be a constant expression / integer literal
 
 // PEXTR
 template<int ndx> tmplInl int     i_pextrb_(__m128 src)		{ return (_mm_extract_epi8 (FtoI(src), ndx)); }
@@ -650,16 +667,18 @@ StInl void i_unpcklpd	(__m128& dest, __m128 a, __m128 b)	{ dest = DtoF(_mm_unpac
 StInl void			i_clflush	(void const* p)				{ _mm_clflush(p); }
 
 // CRC32
+// (and yes, the 64-bit CRC32 generates an effective 32-bit result)
+
 StInl uint32_t		i_crc32	(uint32_t crc, uint8_t  data)	{ return _mm_crc32_u8 (crc, data); }
 StInl uint32_t		i_crc32	(uint32_t crc, uint16_t data)	{ return _mm_crc32_u16(crc, data); }
 StInl uint32_t		i_crc32	(uint32_t crc, uint32_t data)	{ return _mm_crc32_u32(crc, data); }
-StInl uint64_t		i_crc32	(uint64_t crc, uint64_t data)	{ return _mm_crc32_u64(crc, data); }
+StInl uint32_t		i_crc32	(uint32_t crc, uint64_t data)	{ return _mm_crc32_u64(crc, data); }
 
 // EMMS
 StInl void			i_emms		(void)						{ _mm_empty(); }
 
 // LDMXCSR / STMXCSR
-StInl void			i_ldmxcsr	(unsigned int i)			{ _mm_setcsr(i); }
+StInl void			i_ldmxcsr	(uint32_t i)				{ _mm_setcsr(i); }
 StInl unsigned int	i_getcsr	(void)						{ return _mm_getcsr(); }
 
 // LFENCE / MFENCE / SFENCE
@@ -671,7 +690,7 @@ StInl void			i_sfence	(void)						{ _mm_sfence(); }
 StInl void			i_pause		(void)						{ _mm_pause(); }
 
 // POPCNT
-StInl int			i_popcnt	(unsigned int a)			{ return _mm_popcnt_u32(a); }
+StInl int			i_popcnt	(uint32_t a)				{ return _mm_popcnt_u32(a); }
 StInl int64_t		i_popcnt	(uint64_t a)				{ return _mm_popcnt_u64(a); }
 
 // MONITOR / MWAIT / PREFETCHh
