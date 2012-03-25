@@ -20,6 +20,14 @@
  *  SOFTWARE.
  */
 
+// --------------------------------------------------------------------------------------
+// SIMD_STRICT_MEMORY_TYPES  (define/config)
+//
+// When defined, loads and stores (movaps, etc) will require explicit typecasting to
+// or from their base type, suchs as (__m128*) and (__m128i*).  When disabled all memory
+// references are treated as void instead.
+// --------------------------------------------------------------------------------------
+
 #pragma once
 
 #include <xmmintrin.h>
@@ -85,6 +93,49 @@
 
 #define StInl	__ssi_static_inline__
 #define tmplInl	__ssi_always_inline__
+
+// Implementation note for strict memory typedefs: intentionally opting for exclusion of the
+// ptr(*) in the typedefs.  I find code more clear when the * is present in the function
+// prototypes and associated casts. --jstine
+#if defined(SIMD_STRICT_MEMORY_TYPES)
+	typedef const	__m128i		memsrc_m128i;
+	typedef	const	__m128		memsrc_m128;
+	typedef	const	__m128d		memsrc_m128d;
+	typedef	const	float		memsrc_float;
+	typedef	const	double		memsrc_double;
+	typedef	const	uint32_t	memsrc_u32;
+	typedef	const	uint64_t	memsrc_u64;
+	typedef	const	char		memsrc_char;
+
+	typedef			__m128i		memdst_m128i;
+	typedef			__m128		memdst_m128;
+	typedef			__m128d		memdst_m128d;
+	typedef			float		memdst_float;
+	typedef			double		memdst_double;
+	typedef			uint32_t	memdst_u32;
+	typedef			uint64_t	memdst_u64;
+	typedef			char		memdst_char;
+
+#else
+
+	typedef const	void		memsrc_m128i;
+	typedef	const	void		memsrc_m128;
+	typedef	const	void		memsrc_m128d;
+	typedef	const	void		memsrc_float;
+	typedef	const	void		memsrc_double;
+	typedef	const	void		memsrc_u32;
+	typedef	const	void		memsrc_u64;
+	typedef	const	void		memsrc_char;
+
+	typedef			void		memdst_m128i;
+	typedef			void		memdst_m128;
+	typedef			void		memdst_m128d;
+	typedef			void		memdst_float;
+	typedef			void		memdst_double;
+	typedef			void		memdst_u32;
+	typedef			void		memdst_u64;
+	typedef			char		memdst_char;
+#endif
 
 // ADD / SUB
 StInl void i_addps		(__m128& dest, __m128 a, __m128 b)	{ dest = FtoF(_mm_add_ps(FtoF(a), FtoF(b))); }
@@ -281,10 +332,11 @@ StInl void i_hsubps		(__m128& dest, __m128 a, __m128 b)	{ dest = FtoF(_mm_hsub_p
 StInl void i_hsubpd		(__m128& dest, __m128 a, __m128 b)	{ dest = DtoF(_mm_hsub_pd(FtoD(a), FtoD(b))); }
 
 // LDDQU 
-StInl void i_lddqu		(__m128& dest, __m128i const* src)	{ dest = ItoF(_mm_lddqu_si128(src)); }
+StInl void i_lddqu		(__m128& dest, memsrc_m128i* src)	{ dest = ItoF(_mm_lddqu_si128((__m128i*)src)); }
 
 // MASKMOVDQU
-StInl void i_maskmovdqu	(__m128 src, __m128 mask, char* p)	{ _mm_maskmoveu_si128(FtoI(src), FtoI(mask), p); }
+// Uses strict const char* type for source memory since it is referencing non-SIMD data.
+StInl void i_maskmovdqu	(__m128 src, __m128 mask, const char* p)	{ _mm_maskmoveu_si128(FtoI(src), FtoI(mask), (char*)p); }
 
 // MAX / MIN
 StInl void i_maxps		(__m128& dest, __m128 a, __m128 b)	{ dest = FtoF(_mm_max_ps(FtoF(a), FtoF(b))); }
@@ -297,18 +349,18 @@ StInl void i_minpd		(__m128& dest, __m128 a, __m128 b)	{ dest = DtoF(_mm_min_pd(
 StInl void i_minsd		(__m128& dest, __m128 a, __m128 b)	{ dest = DtoF(_mm_min_sd(FtoD(a), FtoD(b))); }
 
 // MOVAPS / MOVAPD / MOVDQA / MOVSS / MOVSD / MOVQ
-StInl void i_movaps		(float*  dest, __m128 src)			{ _mm_store_ps(dest, FtoF(src)); }
-StInl void i_movapd		(double* dest, __m128 src)			{ _mm_store_pd(dest, FtoD(src)); }
-StInl void i_movss		(float*  dest, __m128 src)			{ _mm_store_ss(dest, FtoF(src)); }
-StInl void i_movsd		(double* dest, __m128 src)			{ _mm_store_sd(dest, FtoD(src)); }
-StInl void i_movq		(__m128i*dest, __m128 src)			{ _mm_storel_epi64(dest, FtoI(src)); }
-StInl void i_movdqa		(__m128i*dest, __m128 src)			{ _mm_store_si128 (dest, FtoI(src)); }
-StInl void i_movaps		(__m128& dest, const float*   src)	{ dest = FtoF(_mm_load_ps(src)); }
-StInl void i_movapd		(__m128& dest, const double*  src)	{ dest = DtoF(_mm_load_pd(src)); }
-StInl void i_movss_zx	(__m128& dest, const float*   src)	{ dest = FtoF(_mm_load_ss(src)); }
-StInl void i_movsd_zx	(__m128& dest, const double*  src)	{ dest = DtoF(_mm_load_sd(src)); }
-StInl void i_movq_zx	(__m128& dest, const __m128i* src)	{ dest = ItoF(_mm_loadl_epi64(src)); }
-StInl void i_movdqa		(__m128& dest, const __m128i* src)	{ dest = ItoF(_mm_load_si128 (src)); }
+StInl void i_movaps		(memdst_float*  dest, __m128 src)	{ _mm_store_ps		((float*)  dest, FtoF(src)); }
+StInl void i_movapd		(memdst_double* dest, __m128 src)	{ _mm_store_pd		((double*) dest, FtoD(src)); }
+StInl void i_movss		(memdst_float*  dest, __m128 src)	{ _mm_store_ss		((float*)  dest, FtoF(src)); }
+StInl void i_movsd		(memdst_double* dest, __m128 src)	{ _mm_store_sd		((double*) dest, FtoD(src)); }
+StInl void i_movq		(memdst_m128i*	dest, __m128 src)	{ _mm_storel_epi64	((__m128i*)dest, FtoI(src)); }
+StInl void i_movdqa		(memdst_m128i*	dest, __m128 src)	{ _mm_store_si128	((__m128i*)dest, FtoI(src)); }
+StInl void i_movaps		(__m128& dest, memsrc_float*   src)	{ dest = FtoF(_mm_load_ps		((float*)  src)); }
+StInl void i_movapd		(__m128& dest, memsrc_double*  src)	{ dest = DtoF(_mm_load_pd		((double*) src)); }
+StInl void i_movss_zx	(__m128& dest, memsrc_float*   src)	{ dest = FtoF(_mm_load_ss		((float*)  src)); }
+StInl void i_movsd_zx	(__m128& dest, memsrc_double*  src)	{ dest = DtoF(_mm_load_sd		((double*) src)); }
+StInl void i_movq_zx	(__m128& dest, memsrc_m128i* src)	{ dest = ItoF(_mm_loadl_epi64	((__m128i*)src)); }
+StInl void i_movdqa		(__m128& dest, memsrc_m128i* src)	{ dest = ItoF(_mm_load_si128	((__m128i*)src)); }
 StInl void i_movss		(__m128& dest, __m128 a, __m128 b)	{ dest = FtoF(_mm_move_ss(FtoF(a), FtoF(b))); }
 StInl void i_movsd		(__m128& dest, __m128 a, __m128 b)	{ dest = DtoF(_mm_move_sd(FtoD(a), FtoD(b))); }
 StInl void i_movq_zx	(__m128& dest, __m128 src)			{ dest = ItoF(_mm_move_epi64(FtoI(src))); }
@@ -324,46 +376,46 @@ StInl void i_movshdup	(__m128& dest, __m128 src)			{ dest = FtoF(_mm_movehdup_ps
 StInl void i_movsldup	(__m128& dest, __m128 src)			{ dest = FtoF(_mm_moveldup_ps(FtoF(src))); }
 
 // MOVUPS / MOVUPD
-StInl void i_movups		(__m128& dest, const float*  src)	{ dest = FtoF(_mm_loadu_ps(src)); }
-StInl void i_movupd		(__m128& dest, const double* src)	{ dest = DtoF(_mm_loadu_pd(src)); }
-StInl void i_movups		(float*  dest, __m128 src)			{ _mm_storeu_ps(dest, FtoF(src)); }
-StInl void i_movupd		(double* dest, __m128 src)			{ _mm_storeu_pd(dest, FtoD(src)); }
+StInl void i_movups		(__m128& dest, memsrc_float*  src)	{ dest = FtoF(_mm_loadu_ps((float*) src)); }
+StInl void i_movupd		(__m128& dest, memsrc_double* src)	{ dest = DtoF(_mm_loadu_pd((double*)src)); }
+StInl void i_movups		(memdst_float*  dest, __m128 src)	{ _mm_storeu_ps((float*) dest, FtoF(src)); }
+StInl void i_movupd		(memdst_double* dest, __m128 src)	{ _mm_storeu_pd((double*)dest, FtoD(src)); }
 
 // MOVDDUP
 StInl void i_movddup	(__m128& dest, __m128 src)			{ dest = DtoF(_mm_movedup_pd(FtoD(src))); }
-StInl void i_movddup	(__m128& dest, const double* src)	{ dest = DtoF(_mm_loaddup_pd(src)); }
+StInl void i_movddup	(__m128& dest, memsrc_double* src)	{ dest = DtoF(_mm_loaddup_pd((double*)src)); }
 
 // MOVDQU
-StInl void i_movdqu		(__m128& dest, const __m128i* src)	{ dest = ItoF(_mm_loadu_si128 (src)); }
-StInl void i_movdqu		(__m128i*dest, __m128 src)			{ _mm_storeu_si128 (dest, FtoI(src)); }
+StInl void i_movdqu		(__m128& dest, memsrc_m128i* src)	{ dest = ItoF(_mm_loadu_si128 ((__m128i*)src)); }
+StInl void i_movdqu		(memdst_m128i*dest, __m128 src)		{ _mm_storeu_si128 ((__m128i*)dest, FtoI(src)); }
 
 // MOVDQ2Q
 StInl void i_movdq2q	(__m64&  dest, __m128 a)			{ dest =     (_mm_movepi64_pi64(FtoI(a))); }
 
 // MOVHPS / MOVLPS / MOVHPD / MOVLPD
-StInl void i_movhps		(__m128& dest, __m128 a, __m64* p)	{ dest = FtoF(_mm_loadh_pi(FtoF(a), p)); }
-StInl void i_movlps		(__m128& dest, __m128 a, __m64* p)	{ dest = FtoF(_mm_loadl_pi(FtoF(a), p)); }
-StInl void i_movhpd		(__m128& dest, __m128 a, double* p)	{ dest = DtoF(_mm_loadh_pd(FtoD(a), p)); }
-StInl void i_movlpd		(__m128& dest, __m128 a, double* p)	{ dest = DtoF(_mm_loadl_pd(FtoD(a), p)); }
-StInl void i_movhps		(__m64*  dest, __m128 src)			{ _mm_storeh_pi(dest, FtoF(src)); }
-StInl void i_movlps		(__m64*  dest, __m128 src)			{ _mm_storel_pi(dest, FtoF(src)); }
-StInl void i_movhpd		(double* dest, __m128 src)			{ _mm_storeh_pd(dest, FtoD(src)); }
-StInl void i_movlpd		(double* dest, __m128 src)			{ _mm_storel_pd(dest, FtoD(src)); }
+StInl void i_movhps		(__m128& dest, __m128 a, memsrc_u64* p)		{ dest = FtoF(_mm_loadh_pi(FtoF(a), (__m64*)p)); }
+StInl void i_movlps		(__m128& dest, __m128 a, memsrc_u64* p)		{ dest = FtoF(_mm_loadl_pi(FtoF(a), (__m64*)p)); }
+StInl void i_movhpd		(__m128& dest, __m128 a, memsrc_double* p)	{ dest = DtoF(_mm_loadh_pd(FtoD(a), (double*)p)); }
+StInl void i_movlpd		(__m128& dest, __m128 a, memsrc_double* p)	{ dest = DtoF(_mm_loadl_pd(FtoD(a), (double*)p)); }
+StInl void i_movhps		(memdst_u64*    dest, __m128 src)			{ _mm_storeh_pi((__m64*) dest, FtoF(src)); }
+StInl void i_movlps		(memdst_u64*    dest, __m128 src)			{ _mm_storel_pi((__m64*) dest, FtoF(src)); }
+StInl void i_movhpd		(memdst_double* dest, __m128 src)			{ _mm_storeh_pd((double*)dest, FtoD(src)); }
+StInl void i_movlpd		(memdst_double* dest, __m128 src)			{ _mm_storel_pd((double*)dest, FtoD(src)); }
 
 // MOVHLPS / MOVLHPS
-StInl void i_movhlps	(__m128& dest, __m128 a, __m128 b)	{ dest = FtoF(_mm_movehl_ps(FtoF(a), FtoF(b))); }
-StInl void i_movlhps	(__m128& dest, __m128 a, __m128 b)	{ dest = FtoF(_mm_movelh_ps(FtoF(a), FtoF(b))); }
+StInl void i_movhlps	(__m128& dest, __m128 a, __m128 b)			{ dest = FtoF(_mm_movehl_ps(FtoF(a), FtoF(b))); }
+StInl void i_movlhps	(__m128& dest, __m128 a, __m128 b)			{ dest = FtoF(_mm_movelh_ps(FtoF(a), FtoF(b))); }
 
 // MOVMSKPS / MOVMSKPD
-StInl int  i_movmskps	(__m128 src)						{ return _mm_movemask_ps(FtoF(src)); }
-StInl int  i_movmskpd	(__m128 src)						{ return _mm_movemask_pd(FtoD(src)); }
+StInl int  i_movmskps	(__m128 src)								{ return _mm_movemask_ps(FtoF(src)); }
+StInl int  i_movmskpd	(__m128 src)								{ return _mm_movemask_pd(FtoD(src)); }
 
 // MOVNTPS / MOVNTPD / MOVNTI / MOVNTDQ / MOVNTDQA
-StInl void i_movntps	(float*  dest, __m128   src)		{ _mm_stream_ps(dest, FtoF(src)); }
-StInl void i_movntpd	(double* dest, __m128   src)		{ _mm_stream_pd(dest, FtoD(src)); }
-StInl void i_movntps	(int*    dest, int      src)		{ _mm_stream_si32(dest, src); }
-StInl void i_movntdq	(__m128i*dest, __m128   src)		{ _mm_stream_si128(dest, FtoI(src)); }
-StInl void i_movntdqa	(__m128& dest, __m128i* src)		{ dest = ItoF(_mm_stream_load_si128(src)); }
+StInl void i_movntps	(memsrc_float*	dest, __m128   src)			{ _mm_stream_ps		((float*)  dest, FtoF(src)); }
+StInl void i_movntpd	(memsrc_double*	dest, __m128   src)			{ _mm_stream_pd		((double*) dest, FtoD(src)); }
+StInl void i_movnti		(memsrc_u32*	dest, int      src)			{ _mm_stream_si32	((int*)    dest, src); }
+StInl void i_movntdq	(memsrc_m128i*	dest, __m128   src)			{ _mm_stream_si128	((__m128i*)dest, FtoI(src)); }
+StInl void i_movntdqa	(__m128&		dest, memsrc_m128i*	src)	{ dest = ItoF(_mm_stream_load_si128((__m128i*)src)); }
 
 // MPSADBW
 template<int mask> tmplInl void i_mpsadbw_(__m128& dest, __m128 a, __m128 b) { dest = ItoF(_mm_mpsadbw_epu8(FtoI(a), FtoI(b), mask)); }
@@ -697,6 +749,20 @@ StInl int64_t		i_popcnt	(uint64_t a)				{ return _mm_popcnt_u64(a); }
 #define i_monitor(ptr, extensions, hints)	_mm_monitor(ptr, extensions, hints)
 #define i_mwait(extensions, hints)			_mm_mwait(extensions, hints)
 #define i_prefetch(a, sel)					_mm_prefetch(a, sel)
+
+
+// SPLATS
+// These do not have direct asm connections.  The wrappers use industry standard terms and
+// also return typeless __m128 (usable in all wrapper functions without cast).
+
+StInl void	i_splat8	(__m128& dest, uint8_t val)				{ dest = ItoF(_mm_set1_epi8(val)); }
+StInl void	i_splat16	(__m128& dest, uint16_t val)			{ dest = ItoF(_mm_set1_epi16(val)); }
+StInl void	i_splat32	(__m128& dest, uint32_t val)			{ dest = ItoF(_mm_set1_epi32(val)); }
+//StInl void	i_splat64	(__m128& dest, uint64_t val)			{ dest = ItoF(_mm_set1_epi64(val)); }
+
+StInl void	i_splatss	(__m128& dest, float val)				{ dest = ItoF(_mm_set1_epi32((u32&)val)); }
+StInl void	i_splatsd	(__m128& dest, double val)				{ dest = ItoF(_mm_set1_epi32((u64&)val)); }
+
 
 #undef FtoD
 #undef DtoF
