@@ -21,6 +21,30 @@
  */
 
 // --------------------------------------------------------------------------------------
+// WARNING: VS2011 Beta and PMOVSX/PMOVZX  (SSE4.1+)
+//
+// Early versions of the Visual Studio 2011 Beta make alignment assumptions when PMOVSX/ZX
+// are used to fetch contents from memory, which will generally break most intended uses
+// of these intrinsics.  (result is an invalid access crash caused by a preceding movqda).
+// IMPORTANT: This bug will also show up in VS2010 if you have the VS2011 beta installed
+// on your system!!
+//
+// Some forms of pointer typecast appear to convince the optimizer to use indirect-memory
+// forms of the PMOVSX/ZX instructions; however debug builds ALWAYS generate code that uses
+// movdqa.  The only reliable fix for this at this time is to manually use movdqu to load
+// data into an xmm prior to using it in PMOVSX/ZX.  Ex:
+//
+//   __m128 temp, result;
+//   i_movdqa( temp, ptr );
+//   i_movsxbd( result, temp );
+//
+// The trade-off is that this will generate an extra mov instruction even when the optimizer
+// is enabled.  (one would think the optimizer could strip out the excess mov, but alas
+// I tested and it does not. --jstine)
+// --------------------------------------------------------------------------------------
+
+
+// --------------------------------------------------------------------------------------
 // SIMD_STRICT_MEMORY_TYPES  (define/config)
 //
 // When defined, loads and stores (movaps, etc) will require explicit typecasting to
@@ -608,6 +632,7 @@ StInl void i_pmovsxwq	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepi16_epi6
 StInl void i_pmovsxdq	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepi32_epi64(FtoI(a))); }
 
 // Intel doesn't provide from-memory overloads of PMOVSX, which I find rather inconvenient. --jstine
+// (See VS2011 Beta Warning at top of file regarding the use of these from-memory intrinsics)
 StInl void i_pmovsxbw	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepi8_epi16 (*(__m128i*)src)); }
 StInl void i_pmovsxbd	(__m128& dest, memsrc_u32* src)		{ dest = ItoF(_mm_cvtepi8_epi32 (*(__m128i*)src)); }
 StInl void i_pmovsxbq	(__m128& dest, memsrc_u16* src)		{ dest = ItoF(_mm_cvtepi8_epi64 (*(__m128i*)src)); }
@@ -624,6 +649,7 @@ StInl void i_pmovzxwq	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepu16_epi6
 StInl void i_pmovzxdq	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepu32_epi64(FtoI(a))); }
 
 // Intel doesn't provide from-memory overloads of PMOVZX, which I find rather inconvenient. --jstine
+// (See VS2011 Beta Warning at top of file regarding the use of these from-memory intrinsics)
 StInl void i_pmovzxbw	(__m128& dest, memsrc_u64* src)			{ dest = ItoF(_mm_cvtepu8_epi16 (*(__m128i*)src)); }
 StInl void i_pmovzxbd	(__m128& dest, memsrc_u32* src)			{ dest = ItoF(_mm_cvtepu8_epi32 (*(__m128i*)src)); }
 StInl void i_pmovzxbq	(__m128& dest, memsrc_u16* src)			{ dest = ItoF(_mm_cvtepu8_epi64 (*(__m128i*)src)); }
