@@ -103,6 +103,7 @@
 	typedef	const	__m128d		memsrc_m128d;
 	typedef	const	float		memsrc_float;
 	typedef	const	double		memsrc_double;
+	typedef	const	uint16_t	memsrc_u16;
 	typedef	const	uint32_t	memsrc_u32;
 	typedef	const	uint64_t	memsrc_u64;
 	typedef	const	char		memsrc_char;
@@ -112,6 +113,7 @@
 	typedef			__m128d		memdst_m128d;
 	typedef			float		memdst_float;
 	typedef			double		memdst_double;
+	typedef			uint16_t	memdst_u16;
 	typedef			uint32_t	memdst_u32;
 	typedef			uint64_t	memdst_u64;
 	typedef			char		memdst_char;
@@ -123,6 +125,7 @@
 	typedef	const	void		memsrc_m128d;
 	typedef	const	void		memsrc_float;
 	typedef	const	void		memsrc_double;
+	typedef	const	void		memsrc_u16;
 	typedef	const	void		memsrc_u32;
 	typedef	const	void		memsrc_u64;
 	typedef	const	void		memsrc_char;
@@ -132,6 +135,7 @@
 	typedef			void		memdst_m128d;
 	typedef			void		memdst_float;
 	typedef			void		memdst_double;
+	typedef			void		memdst_u16;
 	typedef			void		memdst_u32;
 	typedef			void		memdst_u64;
 	typedef			char		memdst_char;
@@ -160,6 +164,10 @@ StInl void i_orps		(__m128& dest, __m128 a, __m128 b)	{ dest = FtoF(_mm_or_ps(Ft
 StInl void i_orpd		(__m128& dest, __m128 a, __m128 b)	{ dest = DtoF(_mm_or_pd(FtoD(a), FtoD(b))); }
 StInl void i_xorps		(__m128& dest, __m128 a, __m128 b)	{ dest = FtoF(_mm_xor_ps(FtoF(a), FtoF(b))); }
 StInl void i_xorpd		(__m128& dest, __m128 a, __m128 b)	{ dest = DtoF(_mm_xor_pd(FtoD(a), FtoD(b))); }
+
+// single-param versions of xor, which provide warning-free method of zeroing an uninitialized register.
+StInl void i_xorps		(__m128& dest)						{ dest = FtoF(_mm_xor_ps(FtoF(dest), FtoF(dest))); }
+StInl void i_xorpd		(__m128& dest)						{ dest = DtoF(_mm_xor_pd(FtoD(dest), FtoD(dest))); }
 
 // BLEND
 template<int mask> tmplInl void i_blendps_(__m128& dest, __m128 a, __m128 b)	{ dest = FtoF(_mm_blend_ps(FtoF(a), FtoF(b), mask & 3)); }
@@ -409,6 +417,7 @@ StInl void i_movlhps	(__m128& dest, __m128 a, __m128 b)			{ dest = FtoF(_mm_move
 // MOVMSKPS / MOVMSKPD
 StInl int  i_movmskps	(__m128 src)								{ return _mm_movemask_ps(FtoF(src)); }
 StInl int  i_movmskpd	(__m128 src)								{ return _mm_movemask_pd(FtoD(src)); }
+StInl int  i_pmovmskb	(__m128 src)								{ return _mm_movemask_epi8(FtoI(src)); }
 
 // MOVNTPS / MOVNTPD / MOVNTI / MOVNTDQ / MOVNTDQA
 StInl void i_movntps	(memsrc_float*	dest, __m128   src)			{ _mm_stream_ps		((float*)  dest, FtoF(src)); }
@@ -437,6 +446,7 @@ StInl void i_pand		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_and_si12
 StInl void i_pandn		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_andnot_si128(FtoI(a), FtoI(b))); }
 StInl void i_por		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_or_si128(FtoI(a), FtoI(b))); }
 StInl void i_pxor		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_xor_si128(FtoI(a), FtoI(b))); }
+StInl void i_pxor		(__m128& dest )						{ dest = ItoF(_mm_xor_si128(FtoI(dest), FtoI(dest))); }
 
 // PTEST
 StInl int i_ptestz		(__m128 a, __m128 b)				{ return (_mm_testz_si128  (FtoI(a), FtoI(b))); }
@@ -597,6 +607,14 @@ StInl void i_pmovsxwd	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepi16_epi3
 StInl void i_pmovsxwq	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepi16_epi64(FtoI(a))); }
 StInl void i_pmovsxdq	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepi32_epi64(FtoI(a))); }
 
+// Intel doesn't provide from-memory overloads of PMOVSX, which I find rather inconvenient. --jstine
+StInl void i_pmovsxbw	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepi8_epi16 (*(__m128i*)src)); }
+StInl void i_pmovsxbd	(__m128& dest, memsrc_u32* src)		{ dest = ItoF(_mm_cvtepi8_epi32 (*(__m128i*)src)); }
+StInl void i_pmovsxbq	(__m128& dest, memsrc_u16* src)		{ dest = ItoF(_mm_cvtepi8_epi64 (*(__m128i*)src)); }
+StInl void i_pmovsxwd	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepi16_epi32(*(__m128i*)src)); }
+StInl void i_pmovsxwq	(__m128& dest, memsrc_u32* src)		{ dest = ItoF(_mm_cvtepi16_epi64(*(__m128i*)src)); }
+StInl void i_pmovsxdq	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepi32_epi64(*(__m128i*)src)); }
+
 // PMOVZX
 StInl void i_pmovzxbw	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepu8_epi16 (FtoI(a))); }
 StInl void i_pmovzxbd	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepu8_epi32 (FtoI(a))); }
@@ -604,6 +622,14 @@ StInl void i_pmovzxbq	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepu8_epi64
 StInl void i_pmovzxwd	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepu16_epi32(FtoI(a))); }
 StInl void i_pmovzxwq	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepu16_epi64(FtoI(a))); }
 StInl void i_pmovzxdq	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepu32_epi64(FtoI(a))); }
+
+// Intel doesn't provide from-memory overloads of PMOVZX, which I find rather inconvenient. --jstine
+StInl void i_pmovzxbw	(__m128& dest, memsrc_u64* src)			{ dest = ItoF(_mm_cvtepu8_epi16 (*(__m128i*)src)); }
+StInl void i_pmovzxbd	(__m128& dest, memsrc_u32* src)			{ dest = ItoF(_mm_cvtepu8_epi32 (*(__m128i*)src)); }
+StInl void i_pmovzxbq	(__m128& dest, memsrc_u16* src)			{ dest = ItoF(_mm_cvtepu8_epi64 (*(__m128i*)src)); }
+StInl void i_pmovzxwd	(__m128& dest, memsrc_u64* src)			{ dest = ItoF(_mm_cvtepu16_epi32(*(__m128i*)src)); }
+StInl void i_pmovzxwq	(__m128& dest, memsrc_u32* src)			{ dest = ItoF(_mm_cvtepu16_epi64(*(__m128i*)src)); }
+StInl void i_pmovzxdq	(__m128& dest, memsrc_u64* src)			{ dest = ItoF(_mm_cvtepu32_epi64(*(__m128i*)src)); }
 
 // PMULDQ / PMULHRSW / PMULHUW / PMULHW / PMULLW / PMULLD / PMULUDQ
 StInl void i_pmuldq		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_mul_epi32(FtoI(a), FtoI(b))); }
@@ -760,8 +786,8 @@ StInl void	i_splat16	(__m128& dest, uint16_t val)			{ dest = ItoF(_mm_set1_epi16
 StInl void	i_splat32	(__m128& dest, uint32_t val)			{ dest = ItoF(_mm_set1_epi32(val)); }
 //StInl void	i_splat64	(__m128& dest, uint64_t val)			{ dest = ItoF(_mm_set1_epi64(val)); }
 
-StInl void	i_splatss	(__m128& dest, float val)				{ dest = ItoF(_mm_set1_epi32((u32&)val)); }
-StInl void	i_splatsd	(__m128& dest, double val)				{ dest = ItoF(_mm_set1_epi32((u64&)val)); }
+StInl void	i_splat_ps	(__m128& dest, float val)				{ dest = FtoF(_mm_set1_ps((float&)val)); }
+StInl void	i_splat_pd	(__m128& dest, double val)				{ dest = DtoF(_mm_set1_pd((double&)val)); }
 
 
 #undef FtoD
