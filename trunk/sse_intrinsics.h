@@ -21,15 +21,15 @@
  */
 
 // --------------------------------------------------------------------------------------
-// WARNING: VS2011 Beta and PMOVSX/PMOVZX  (SSE4.1+)
+// WARNING: Visual Studio and PMOVSX/PMOVZX  (SSE4.1+)   [SSE_INTRIN_PMOV_HACK]
 //
-// Early versions of the Visual Studio 2011 Beta make alignment assumptions when PMOVSX/ZX
-// are used to fetch contents from memory, which will generally break most intended uses
-// of these intrinsics.  (result is an invalid access crash caused by a preceding movqda).
-// IMPORTANT: This bug will also show up in VS2010 if you have the VS2011 beta installed
-// on your system!!
+// All known versions of Visual Studio make alignment assumptions when PMOVSX/ZX are used
+// to fetch contents from memory, which will generally break most intended uses of these
+// intrinsics.  (result is an invalid access crash caused by a preceding movqda).
+// The bug occurs most frequently when optimizations are disabled, however can also 
+// happen when optimizations are enabled in specific (rare) circumstances.
 //
-// Some forms of pointer typecast appear to convince the optimizer to use indirect-memory
+// Various forms of pointer typecast appear to convince the optimizer to use indirect-memory
 // forms of the PMOVSX/ZX instructions; however debug builds ALWAYS generate code that uses
 // movdqa.  The only reliable fix for this at this time is to manually use movdqu to load
 // data into an xmm prior to using it in PMOVSX/ZX.  Ex:
@@ -50,6 +50,23 @@
 // When defined, loads and stores (movaps, etc) will require explicit typecasting to
 // or from their base type, suchs as (__m128*) and (__m128i*).  When disabled all memory
 // references are treated as void instead.
+// --------------------------------------------------------------------------------------
+
+// --------------------------------------------------------------------------------------
+// SSE_INTRIN_NO_OPTIMIZE  (define/config)
+//
+// Option to disable the header file's automatic enabling of optimization and inlining.
+// Highly recommended this is left at its default (0).  Tracing intrinsic code via the
+// debugger should be a lot more gratifying in all cases barring perhaps troubleshooting
+// bugs in the intrinsic wrapper itself.
+// --------------------------------------------------------------------------------------
+
+// --------------------------------------------------------------------------------------
+// SSE_INTRIN_PMOV_HACK=[0,1]  (define/config)
+//
+// Controls whether or not the PMOVSX/ZX instructions are generated with preceding movdqu
+// (unaligned) loads.  This hack must be enabled for Visual Studio non-optimized compiles,
+// otherwise resulting code may crash with an unaligned read exception.
 // --------------------------------------------------------------------------------------
 
 #pragma once
@@ -74,6 +91,15 @@
 #endif
 
 #include <stdint.h>
+
+#if !defined(SSE_INTRIN_PMOV_HACK)
+#	if defined(_MSC_VER) && defined(_DEBUG)
+#		define SSE_INTRIN_PMOV_HACK		1
+#	else
+#		define SSE_INTRIN_PMOV_HACK		0
+#	endif
+#endif
+
 
 #if defined(__GNUC__)
 #	if !defined(__ssi_always_inline__)
@@ -164,6 +190,27 @@
 	typedef			void		memdst_u64;
 	typedef			char		memdst_char;
 #endif
+
+
+// --------------------------------------------------------------------------------------
+// SSE_INTRIN_OPTIMIZE_BEGIN / SSE_INTRIN_OPTIMIZE_END
+//
+// Force optimization AND inlining on Visual Studio in ALL BUILDS (including unoptimized
+// debug builds) by default.  This helps improve both performance and step-tracing of
+// SIMD intrinsics.  It is also highly recommended to enable intrinsic inlines in your
+// debug build target project options.
+//
+#if (_MSC_VER > 1600) && !defined(SSE_INTRIN_NO_OPTIMIZE)
+#	define SSE_INTRIN_OPTIMIZE_BEGIN	__pragma( optimize( "gtb", on ) )
+#	define SSE_INTRIN_OPTIMIZE_END		__pragma( optimize( "", on ) )
+#else
+#	define SSE_INTRIN_OPTIMIZE_BEGIN
+#	define SSE_INTRIN_OPTIMIZE_END
+#endif
+// --------------------------------------------------------------------------------------
+
+
+SSE_INTRIN_OPTIMIZE_BEGIN
 
 // ADD / SUB
 StInl void i_addps		(__m128& dest, __m128 a, __m128 b)	{ dest = FtoF(_mm_add_ps(FtoF(a), FtoF(b))); }
@@ -631,15 +678,6 @@ StInl void i_pmovsxwd	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepi16_epi3
 StInl void i_pmovsxwq	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepi16_epi64(FtoI(a))); }
 StInl void i_pmovsxdq	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepi32_epi64(FtoI(a))); }
 
-// Intel doesn't provide from-memory overloads of PMOVSX, which I find rather inconvenient. --jstine
-// (See VS2011 Beta Warning at top of file regarding the use of these from-memory intrinsics)
-StInl void i_pmovsxbw	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepi8_epi16 (*(__m128i*)src)); }
-StInl void i_pmovsxbd	(__m128& dest, memsrc_u32* src)		{ dest = ItoF(_mm_cvtepi8_epi32 (*(__m128i*)src)); }
-StInl void i_pmovsxbq	(__m128& dest, memsrc_u16* src)		{ dest = ItoF(_mm_cvtepi8_epi64 (*(__m128i*)src)); }
-StInl void i_pmovsxwd	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepi16_epi32(*(__m128i*)src)); }
-StInl void i_pmovsxwq	(__m128& dest, memsrc_u32* src)		{ dest = ItoF(_mm_cvtepi16_epi64(*(__m128i*)src)); }
-StInl void i_pmovsxdq	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepi32_epi64(*(__m128i*)src)); }
-
 // PMOVZX
 StInl void i_pmovzxbw	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepu8_epi16 (FtoI(a))); }
 StInl void i_pmovzxbd	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepu8_epi32 (FtoI(a))); }
@@ -649,13 +687,38 @@ StInl void i_pmovzxwq	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepu16_epi6
 StInl void i_pmovzxdq	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepu32_epi64(FtoI(a))); }
 
 // Intel doesn't provide from-memory overloads of PMOVZX, which I find rather inconvenient. --jstine
-// (See VS2011 Beta Warning at top of file regarding the use of these from-memory intrinsics)
-StInl void i_pmovzxbw	(__m128& dest, memsrc_u64* src)			{ dest = ItoF(_mm_cvtepu8_epi16 (*(__m128i*)src)); }
-StInl void i_pmovzxbd	(__m128& dest, memsrc_u32* src)			{ dest = ItoF(_mm_cvtepu8_epi32 (*(__m128i*)src)); }
-StInl void i_pmovzxbq	(__m128& dest, memsrc_u16* src)			{ dest = ItoF(_mm_cvtepu8_epi64 (*(__m128i*)src)); }
-StInl void i_pmovzxwd	(__m128& dest, memsrc_u64* src)			{ dest = ItoF(_mm_cvtepu16_epi32(*(__m128i*)src)); }
-StInl void i_pmovzxwq	(__m128& dest, memsrc_u32* src)			{ dest = ItoF(_mm_cvtepu16_epi64(*(__m128i*)src)); }
-StInl void i_pmovzxdq	(__m128& dest, memsrc_u64* src)			{ dest = ItoF(_mm_cvtepu32_epi64(*(__m128i*)src)); }
+// (See Visual Studio Warning at top of file regarding the use of these from-memory intrinsics)
+
+#if SSE_INTRIN_PMOV_HACK
+StInl void i_pmovsxbw	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepi8_epi16 (_mm_loadu_si128((__m128i*)src))); }
+StInl void i_pmovsxbd	(__m128& dest, memsrc_u32* src)		{ dest = ItoF(_mm_cvtepi8_epi32 (_mm_loadu_si128((__m128i*)src))); }
+StInl void i_pmovsxbq	(__m128& dest, memsrc_u16* src)		{ dest = ItoF(_mm_cvtepi8_epi64 (_mm_loadu_si128((__m128i*)src))); }
+StInl void i_pmovsxwd	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepi16_epi32(_mm_loadu_si128((__m128i*)src))); }
+StInl void i_pmovsxwq	(__m128& dest, memsrc_u32* src)		{ dest = ItoF(_mm_cvtepi16_epi64(_mm_loadu_si128((__m128i*)src))); }
+StInl void i_pmovsxdq	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepi32_epi64(_mm_loadu_si128((__m128i*)src))); }
+
+StInl void i_pmovzxbw	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepu8_epi16 (_mm_loadu_si128((__m128i*)src))); }
+StInl void i_pmovzxbd	(__m128& dest, memsrc_u32* src)		{ dest = ItoF(_mm_cvtepu8_epi32 (_mm_loadu_si128((__m128i*)src))); }
+StInl void i_pmovzxbq	(__m128& dest, memsrc_u16* src)		{ dest = ItoF(_mm_cvtepu8_epi64 (_mm_loadu_si128((__m128i*)src))); }
+StInl void i_pmovzxwd	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepu16_epi32(_mm_loadu_si128((__m128i*)src))); }
+StInl void i_pmovzxwq	(__m128& dest, memsrc_u32* src)		{ dest = ItoF(_mm_cvtepu16_epi64(_mm_loadu_si128((__m128i*)src))); }
+StInl void i_pmovzxdq	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepu32_epi64(_mm_loadu_si128((__m128i*)src))); }
+#else
+StInl void i_pmovsxbw	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepi8_epi16 (*(__m128i*)src)); }
+StInl void i_pmovsxbd	(__m128& dest, memsrc_u32* src)		{ dest = ItoF(_mm_cvtepi8_epi32 (*(__m128i*)src)); }
+StInl void i_pmovsxbq	(__m128& dest, memsrc_u16* src)		{ dest = ItoF(_mm_cvtepi8_epi64 (*(__m128i*)src)); }
+StInl void i_pmovsxwd	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepi16_epi32(*(__m128i*)src)); }
+StInl void i_pmovsxwq	(__m128& dest, memsrc_u32* src)		{ dest = ItoF(_mm_cvtepi16_epi64(*(__m128i*)src)); }
+StInl void i_pmovsxdq	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepi32_epi64(*(__m128i*)src)); }
+
+StInl void i_pmovzxbw	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepu8_epi16 (*(__m128i*)src)); }
+StInl void i_pmovzxbd	(__m128& dest, memsrc_u32* src)		{ dest = ItoF(_mm_cvtepu8_epi32 (*(__m128i*)src)); }
+StInl void i_pmovzxbq	(__m128& dest, memsrc_u16* src)		{ dest = ItoF(_mm_cvtepu8_epi64 (*(__m128i*)src)); }
+StInl void i_pmovzxwd	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepu16_epi32(*(__m128i*)src)); }
+StInl void i_pmovzxwq	(__m128& dest, memsrc_u32* src)		{ dest = ItoF(_mm_cvtepu16_epi64(*(__m128i*)src)); }
+StInl void i_pmovzxdq	(__m128& dest, memsrc_u64* src)		{ dest = ItoF(_mm_cvtepu32_epi64(*(__m128i*)src)); }
+#endif
+
 
 // PMULDQ / PMULHRSW / PMULHUW / PMULHW / PMULLW / PMULLD / PMULUDQ
 StInl void i_pmuldq		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_mul_epi32(FtoI(a), FtoI(b))); }
@@ -815,6 +878,8 @@ StInl void	i_splat32	(__m128& dest, uint32_t val)			{ dest = ItoF(_mm_set1_epi32
 StInl void	i_splat_ps	(__m128& dest, float val)				{ dest = FtoF(_mm_set1_ps((float&)val)); }
 StInl void	i_splat_pd	(__m128& dest, double val)				{ dest = DtoF(_mm_set1_pd((double&)val)); }
 
+
+SSE_INTRIN_OPTIMIZE_END
 
 #undef FtoD
 #undef DtoF
