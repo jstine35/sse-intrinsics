@@ -401,7 +401,8 @@ template<int ndx> tmplInl int  i_extractps_	(__m128 a)		{ return     (_mm_extrac
 #define i_extractps(a, ndx) i_extractps_<ndx>(a) // ndx needs to be a constant expression / integer literal
 
 // INSERTPS
-template<int ndx> tmplInl void i_insertps_(__m128& dest, __m128 dst, __m128 src)	{ return FtoF(_mm_insert_ps(FtoF(dst), FtoF(src), ndx)); }
+template<int ndx> tmplInl void i_insertps_(__m128& dest, __m128 dst, __m128 src)		{ dest = FtoF(_mm_insert_ps(FtoF(dst), FtoF(src), ndx)); }
+template<int ndx> tmplInl void i_insertps_(__m128& dest, __m128 dst, memsrc_m128* src)	{ dest = FtoF(_mm_insert_ps(FtoF(dst), *(__m128*)src, ndx)); }
 #define i_insertps(dest, dst, src, ndx) i_insertps_<ndx>(dest, dst, src) // ndx needs to be a constant expression / integer literal
 
 // HADD / HSUB
@@ -485,7 +486,7 @@ StInl void i_movlpd		(memdst_double* dest, __m128 src)			{ _mm_storel_pd((double
 StInl void i_movhlps	(__m128& dest, __m128 a, __m128 b)			{ dest = FtoF(_mm_movehl_ps(FtoF(a), FtoF(b))); }
 StInl void i_movlhps	(__m128& dest, __m128 a, __m128 b)			{ dest = FtoF(_mm_movelh_ps(FtoF(a), FtoF(b))); }
 
-// MOVMSKPS / MOVMSKPD
+// MOVMSKPS / MOVMSKPD / PMOVMSKB
 StInl int  i_movmskps	(__m128 src)								{ return _mm_movemask_ps(FtoF(src)); }
 StInl int  i_movmskpd	(__m128 src)								{ return _mm_movemask_pd(FtoD(src)); }
 StInl int  i_pmovmskb	(__m128 src)								{ return _mm_movemask_epi8(FtoI(src)); }
@@ -517,7 +518,7 @@ StInl void i_pand		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_and_si12
 StInl void i_pandn		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_andnot_si128(FtoI(a), FtoI(b))); }
 StInl void i_por		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_or_si128(FtoI(a), FtoI(b))); }
 StInl void i_pxor		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_xor_si128(FtoI(a), FtoI(b))); }
-StInl void i_pxor		(__m128& dest )						{ dest = ItoF(_mm_xor_si128(FtoI(dest), FtoI(dest))); }
+StInl void i_pxor		(__m128& dest)						{ dest = ItoF(_mm_xor_si128(FtoI(dest), FtoI(dest))); }
 
 // PTEST
 StInl int i_ptestz		(__m128 a, __m128 b)				{ return (_mm_testz_si128  (FtoI(a), FtoI(b))); }
@@ -666,9 +667,6 @@ StInl void i_pmaxud		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_max_ep
 StInl void i_pminub		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_min_epu8 (FtoI(a), FtoI(b))); }
 StInl void i_pminuw		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_min_epu16(FtoI(a), FtoI(b))); }
 StInl void i_pminud		(__m128& dest, __m128 a, __m128 b)	{ dest = ItoF(_mm_min_epu32(FtoI(a), FtoI(b))); }
-
-// PMOVMSKB
-StInl int  i_pmovsxbw	(__m128 a)							{ return     (_mm_movemask_epi8 (FtoI(a))); }
 
 // PMOVSX
 StInl void i_pmovsxbw	(__m128& dest, __m128 a)			{ dest = ItoF(_mm_cvtepi8_epi16 (FtoI(a))); }
