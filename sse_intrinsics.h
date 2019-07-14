@@ -119,7 +119,7 @@
 #include <stdint.h>
 
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__CLANG__)
 #   if !defined(__ssi_always_inline__)
 #       define __ssi_always_inline__            __always_inline
 #   endif
